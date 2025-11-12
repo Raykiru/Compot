@@ -36,7 +36,8 @@ main :: proc() {
 	}
 
 	for device, i in playback_infos[:playbackCount] {
-		fmt.printfln("%v- name:%s\n", i, cstring(raw_data(device.name[:])))
+		name := device.name
+		fmt.printfln("%v- name:%s\n", i, cstring(raw_data(name[:])))
 	}
 
 
