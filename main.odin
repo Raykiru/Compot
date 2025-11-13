@@ -6,31 +6,6 @@ import "core:fmt"
 import "core:os/os2"
 import ma "vendor:miniaudio"
 
-waveform :: proc(
-	fr, amp: f64,
-	allocator := context.allocator,
-) -> (
-	wave: ^ma.waveform,
-	err: ma.result,
-) {
-	waveform_conf := ma.waveform_config_init(.f32, 2, 48000, .square, amp, fr)
-	wave = new(ma.waveform)
-
-	if err := ma.waveform_init(&waveform_conf, wave); err != nil {
-		free(wave)
-		return nil, err
-	}
-
-	return
-}
-
-
-stop_sound :: proc(sound: ^ma.sound, err: ma.result) {
-	if err != nil {
-		ma.sound_stop(sound)
-		ma.sound_uninit(sound)
-	}
-}
 
 init_sound :: proc(
 	engine: ^ma.engine,
@@ -41,70 +16,34 @@ init_sound :: proc(
 	sound: ^ma.sound,
 	err: ma.result,
 ) {
+	waveform_conf := ma.waveform_config_init(.f32, 2, 48000, .square, amp, fr)
+	wave := new(ma.waveform)
 
-	if wave, err := waveform(fr, amp); err == nil {
-		sound = new(ma.sound)
-
-		if err := ma.sound_init_from_data_source(
-			engine,
-			cast(^ma.data_source)wave,
-			sound_conf.flags,
-			nil,
-			sound,
-		); err != nil {
-			fmt.println("Failed to init sound:", err)
-			ma.sound_uninit(sound)
-			free(sound)
-
-			return nil, err
-		}
-
-		return
+	if err := ma.waveform_init(&waveform_conf, wave); err != nil {
+		free(wave)
+		return nil, err
 	}
 
-	return nil, err
-}
+	sound = new(ma.sound)
 
+	if err := ma.sound_init_from_data_source(
+		engine,
+		cast(^ma.data_source)wave,
+		sound_conf.flags,
+		nil,
+		sound,
+	); err != nil {
+		fmt.println("Failed to init sound:", err)
+		ma.sound_uninit(sound)
+		free(sound)
 
-@(deferred_out = stop_sound)
-play_sound :: proc(
-	engine: ^ma.engine,
-	sound_conf: ^ma.sound_config,
-	fr, amp: f64,
-	allocator := context.allocator,
-) -> (
-	sound: ^ma.sound,
-	err: ma.result,
-) {
-
-	if wave, err := waveform(fr, amp); err == nil {
-		sound = new(ma.sound)
-
-		if err := ma.sound_init_from_data_source(
-			engine,
-			cast(^ma.data_source)wave,
-			sound_conf.flags,
-			nil,
-			sound,
-		); err != nil {
-			fmt.println("Failed to init sound:", err)
-			ma.sound_uninit(sound)
-			free(sound)
-
-			return nil, err
-		}
-
-		if err := ma.sound_start(sound); err != nil {
-			fmt.println("Failed to start sound")
-			ma.sound_uninit(sound)
-			fmt.println("Engine started")
-			return nil, err
-		}
-		return
+		return nil, err
 	}
 
-	return nil, err
+	return
+
 }
+
 
 main :: proc() {
 	engine_conf := ma.engine_config_init()
@@ -129,14 +68,15 @@ main :: proc() {
 
 	g, _ := init_sound(&engine, &sound_conf, 392, 0.1)
 
+	rate := cast(u64)engine.sampleRate
 	ma.sound_set_start_time_in_pcm_frames(c, 0)
-	ma.sound_set_stop_time_in_pcm_frames(c, auto_cast engine.sampleRate * 1)
+	ma.sound_set_stop_time_in_pcm_frames(c, rate * 1)
 
-	ma.sound_set_start_time_in_pcm_frames(f, auto_cast engine.sampleRate * 1)
-	ma.sound_set_stop_time_in_pcm_frames(f, auto_cast engine.sampleRate * 2)
+	ma.sound_set_start_time_in_pcm_frames(f, rate * 1)
+	ma.sound_set_stop_time_in_pcm_frames(f, rate * 2)
 
-	ma.sound_set_start_time_in_pcm_frames(g, auto_cast engine.sampleRate * 2)
-	ma.sound_set_stop_time_in_pcm_frames(g, auto_cast engine.sampleRate * 3)
+	ma.sound_set_start_time_in_pcm_frames(g, rate * 2)
+	ma.sound_set_stop_time_in_pcm_frames(g, rate * 3)
 
 
 	// ma.sound_set_
@@ -160,10 +100,6 @@ main :: proc() {
 		libc.getchar()
 	}
 }
-counter: int
-frames: u32
-dir: int
-swap: bool
 
 data_callback_t :: #type proc "c" (dev: ^ma.device, output: rawptr, input: rawptr, frame_c: u32)
 original_callback: data_callback_t
@@ -177,55 +113,4 @@ data_callback :: proc "c" (dev: ^ma.device, output: rawptr, input: rawptr, frame
 	}
 
 	original_callback(dev, output, input, frame_c)
-}
-
-play_wave :: proc() {
-	sine_waves: [^]ma.waveform = make([^]ma.waveform, 2)
-
-	device_config := ma.device_config_init(.playback)
-
-	device_config.playback.format = .f32
-	device_config.playback.channels = 2
-	device_config.sampleRate = 48000
-	device_config.dataCallback = data_callback
-	device_config.pUserData = sine_waves
-
-	device: ma.device
-	defer ma.device_uninit(&device)
-
-	if err := ma.device_init(nil, &device_config, &device); err != nil {
-		fmt.panicf("Failed to initialize device: %v", err)
-	}
-
-	fmt.printfln("Device name: %s", device.playback.name)
-
-	fmt.printfln("initializing waveform conf:")
-	sine_wave_conf := ma.waveform_config_init(
-		device.playback.playback_format,
-		device.playback.channels,
-		device.sampleRate,
-		ma.waveform_type.sine,
-		0.2,
-		440,
-	)
-
-	fmt.printfln("initializing waveform:")
-	if err := ma.waveform_init(&sine_wave_conf, &sine_waves[0]); err != nil {
-		fmt.panicf("Err initializing waveform: %v", err)
-	}
-
-	if err := ma.waveform_init(&sine_wave_conf, &sine_waves[1]); err != nil {
-		fmt.panicf("Err initializing waveform: %v", err)
-	}
-
-	fmt.printfln("Starting device:")
-	if err := ma.device_start(&device); err != nil {
-		fmt.panicf("Failed to start playback device: %v", err)
-	}
-
-	p: [2]u8
-	fmt.printfln("Waiting for input:")
-	os2.read(os2.stdin, p[:])
-	fmt.printfln("Over")
-
 }
