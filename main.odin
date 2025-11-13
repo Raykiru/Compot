@@ -32,6 +32,40 @@ stop_sound :: proc(sound: ^ma.sound, err: ma.result) {
 	}
 }
 
+init_sound :: proc(
+	engine: ^ma.engine,
+	sound_conf: ^ma.sound_config,
+	fr, amp: f64,
+	allocator := context.allocator,
+) -> (
+	sound: ^ma.sound,
+	err: ma.result,
+) {
+
+	if wave, err := waveform(fr, amp); err == nil {
+		sound = new(ma.sound)
+
+		if err := ma.sound_init_from_data_source(
+			engine,
+			cast(^ma.data_source)wave,
+			sound_conf.flags,
+			nil,
+			sound,
+		); err != nil {
+			fmt.println("Failed to init sound:", err)
+			ma.sound_uninit(sound)
+			free(sound)
+
+			return nil, err
+		}
+
+		return
+	}
+
+	return nil, err
+}
+
+
 @(deferred_out = stop_sound)
 play_sound :: proc(
 	engine: ^ma.engine,
@@ -73,77 +107,77 @@ play_sound :: proc(
 }
 
 main :: proc() {
+	engine_conf := ma.engine_config_init()
+	engine_conf.noAutoStart = true
 
 	engine: ma.engine
 	defer ma.engine_uninit(&engine)
-	if err := ma.engine_init(nil, &engine); err != nil {
+	if err := ma.engine_init(&engine_conf, &engine); err != nil {
 		fmt.println("Failed to init engine:", err)
 		return
 	}
-	ma.engine_stop(&engine)
+
+	original_callback = cast(data_callback_t)engine.pDevice.onData
+	fmt.println(engine.pDevice.playback.playback_format)
 
 
 	sound_conf: ma.sound_config = ma.sound_config_init_2(&engine)
 
-	c, _ := play_sound(&engine, &sound_conf, 261.63, 0.1)
+	c, _ := init_sound(&engine, &sound_conf, 261.63, 0.1)
 
-	f, _ := play_sound(&engine, &sound_conf, 349.23, 0.1)
+	f, _ := init_sound(&engine, &sound_conf, 349.23, 0.1)
 
-	g, _ := play_sound(&engine, &sound_conf, 392, 0.1)
+	g, _ := init_sound(&engine, &sound_conf, 392, 0.1)
+
+	ma.sound_set_start_time_in_pcm_frames(c, 0)
+	ma.sound_set_stop_time_in_pcm_frames(c, auto_cast engine.sampleRate * 1)
+
+	ma.sound_set_start_time_in_pcm_frames(f, auto_cast engine.sampleRate * 1)
+	ma.sound_set_stop_time_in_pcm_frames(f, auto_cast engine.sampleRate * 2)
+
+	ma.sound_set_start_time_in_pcm_frames(g, auto_cast engine.sampleRate * 2)
+	ma.sound_set_stop_time_in_pcm_frames(g, auto_cast engine.sampleRate * 3)
 
 
-	fmt.println("Press enter start")
-	libc.getchar()
+	// ma.sound_set_
+
+	{ 	// engine runtime
+		fmt.println("Press enter start")
+		libc.getchar()
+		ma.sound_start(c)
+		ma.sound_start(f)
+		ma.sound_start(g)
 
 
-	fmt.println("Engine started")
-	if err := ma.engine_start(&engine); err != nil {
-		fmt.println("Failed to start engine:", err)
-		return
+		if err := ma.engine_start(&engine); err != nil {
+			fmt.println("Failed to start engine:", err)
+			return
+		}
+		fmt.println("Engine started")
+
+
+		fmt.println("Press enter to end")
+		libc.getchar()
 	}
-
-
-	fmt.println("Press enter to end")
-	libc.getchar()
-
 }
 counter: int
 frames: u32
 dir: int
 swap: bool
 
+data_callback_t :: #type proc "c" (dev: ^ma.device, output: rawptr, input: rawptr, frame_c: u32)
+original_callback: data_callback_t
 data_callback :: proc "c" (dev: ^ma.device, output: rawptr, input: rawptr, frame_c: u32) {
 	context = runtime.default_context()
-	waves := cast([^]ma.waveform)dev.pUserData
-	wave1 := &waves[0]
-	wave2 := &waves[1]
 
-	// assert_contextless(wave1 != nil)
-	notes := [?]f64{261.63, 261.63, 293.66, 329.63, 349.23, 392, 440, 493.88, 523.25, 523.25}
 
-	if frames % 48000 == 0 {
-		ma.waveform_set_frequency(wave1, notes[counter])
-		ma.waveform_set_type(wave1, ma.waveform_type.square)
-		ma.waveform_set_amplitude(wave1, 0.01)
-		if counter == 0 do dir = 1
-		if counter == len(notes) - 1 do dir = -1
-
-		fmt.printfln("{1:v} wave: {0:#v}", wave1.config.frequency, counter)
-		counter += dir
+	// fmt.println(dev, frame_c)
+	if original_callback == nil {
+		os2.exit(1)
 	}
 
-	// swap = !swap
-	swap = true
-	if err := ma.waveform_read_pcm_frames(wave1, output, u64(frame_c), nil); err != nil {
-		fmt.println(err)
-	}
-
-	if err := ma.waveform_read_pcm_frames(wave2, output, u64(frame_c), nil); err != nil {
-		fmt.println(err)
-	}
-	frames += frame_c
+	original_callback(dev, output, input, frame_c)
 }
-
 
 play_wave :: proc() {
 	sine_waves: [^]ma.waveform = make([^]ma.waveform, 2)
