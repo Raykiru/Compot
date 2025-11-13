@@ -11,12 +11,13 @@ init_sound :: proc(
 	engine: ^ma.engine,
 	sound_conf: ^ma.sound_config,
 	fr, amp: f64,
+	type: ma.waveform_type = .square,
 	allocator := context.allocator,
 ) -> (
 	sound: ^ma.sound,
 	err: ma.result,
 ) {
-	waveform_conf := ma.waveform_config_init(.f32, 2, 48000, .square, amp, fr)
+	waveform_conf := ma.waveform_config_init(.f32, 2, 44100, type, amp, fr)
 	wave := new(ma.waveform)
 
 	if err := ma.waveform_init(&waveform_conf, wave); err != nil {
