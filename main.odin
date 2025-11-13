@@ -5,15 +5,34 @@ import "core:fmt"
 import "core:os/os2"
 import ma "vendor:miniaudio"
 
+counter: int
+frames: u32
+dir: int
+
 data_callback :: proc "c" (dev: ^ma.device, output: rawptr, input: rawptr, frame_c: u32) {
+	context = runtime.default_context()
 	wave := cast(^ma.waveform)dev.pUserData
 
 	assert_contextless(wave != nil)
+	notes := [?]f64{261.63, 261.63, 293.66, 329.63, 349.23, 392, 440, 493.88, 523.25, 523.25}
+
+	if frames % 48000 == 0 {
+		ma.waveform_set_frequency(wave, notes[counter])
+		if counter == 0 do dir = 1
+		if counter == len(notes) - 1 do dir = -1
+
+		fmt.printfln("{1:v} wave: {0:#v}", wave.config.frequency, counter)
+		counter += dir
+	}
+
+	frames += frame_c
+
 
 	if err := ma.waveform_read_pcm_frames(wave, output, u64(frame_c), nil); err != nil {
-		context = runtime.default_context()
 		fmt.println(err)
 	}
+
+
 }
 
 main :: proc() {
@@ -44,7 +63,7 @@ main :: proc() {
 		device.sampleRate,
 		ma.waveform_type.sine,
 		0.2,
-		220,
+		440,
 	)
 
 	fmt.printfln("initializing waveform:")
