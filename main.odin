@@ -1,10 +1,27 @@
 package main
 
 import "base:runtime"
+import "core:c/libc"
 import "core:fmt"
 import "core:os/os2"
 import ma "vendor:miniaudio"
 
+
+main :: proc() {
+	engine_conf: ma.engine_config = ma.engine_config_init()
+
+	engine: ma.engine
+	if err := ma.engine_init(&engine_conf, &engine); err != nil {
+		fmt.println("Failed to init engine:", err)
+		return
+	}
+	if err := ma.engine_start(&engine); err != nil {
+		fmt.println("Failed to start engine:", err)
+	}
+	fmt.println("Engine started")
+	libc.getchar()
+
+}
 counter: int
 frames: u32
 dir: int
@@ -40,12 +57,10 @@ data_callback :: proc "c" (dev: ^ma.device, output: rawptr, input: rawptr, frame
 		fmt.println(err)
 	}
 	frames += frame_c
-
-
 }
 
-main :: proc() {
 
+play_wave :: proc() {
 	sine_waves: [^]ma.waveform = make([^]ma.waveform, 2)
 
 	device_config := ma.device_config_init(.playback)
@@ -93,4 +108,5 @@ main :: proc() {
 	fmt.printfln("Waiting for input:")
 	os2.read(os2.stdin, p[:])
 	fmt.printfln("Over")
+
 }
