@@ -6,19 +6,104 @@ import "core:fmt"
 import "core:os/os2"
 import ma "vendor:miniaudio"
 
+waveform :: proc(
+	fr, amp: f64,
+	allocator := context.allocator,
+) -> (
+	wave: ^ma.waveform,
+	err: ma.result,
+) {
+	waveform_conf := ma.waveform_config_init(.f32, 2, 48000, .square, amp, fr)
+	wave = new(ma.waveform)
+
+	if err := ma.waveform_init(&waveform_conf, wave); err != nil {
+		free(wave)
+		return nil, err
+	}
+
+	return
+}
+
+
+stop_sound :: proc(sound: ^ma.sound, err: ma.result) {
+	if err != nil {
+		ma.sound_stop(sound)
+		ma.sound_uninit(sound)
+	}
+}
+
+@(deferred_out = stop_sound)
+play_sound :: proc(
+	engine: ^ma.engine,
+	sound_conf: ^ma.sound_config,
+	fr, amp: f64,
+	allocator := context.allocator,
+) -> (
+	sound: ^ma.sound,
+	err: ma.result,
+) {
+
+	if wave, err := waveform(fr, amp); err == nil {
+		sound = new(ma.sound)
+
+		if err := ma.sound_init_from_data_source(
+			engine,
+			cast(^ma.data_source)wave,
+			sound_conf.flags,
+			nil,
+			sound,
+		); err != nil {
+			fmt.println("Failed to init sound:", err)
+			ma.sound_uninit(sound)
+			free(sound)
+
+			return nil, err
+		}
+
+		if err := ma.sound_start(sound); err != nil {
+			fmt.println("Failed to start sound")
+			ma.sound_uninit(sound)
+			fmt.println("Engine started")
+			return nil, err
+		}
+		return
+	}
+
+	return nil, err
+}
 
 main :: proc() {
-	engine_conf: ma.engine_config = ma.engine_config_init()
 
 	engine: ma.engine
-	if err := ma.engine_init(&engine_conf, &engine); err != nil {
+	defer ma.engine_uninit(&engine)
+	if err := ma.engine_init(nil, &engine); err != nil {
 		fmt.println("Failed to init engine:", err)
 		return
 	}
+	ma.engine_stop(&engine)
+
+
+	sound_conf: ma.sound_config = ma.sound_config_init_2(&engine)
+
+	c, _ := play_sound(&engine, &sound_conf, 261.63, 0.1)
+
+	f, _ := play_sound(&engine, &sound_conf, 349.23, 0.1)
+
+	g, _ := play_sound(&engine, &sound_conf, 392, 0.1)
+
+
+	fmt.println("Press enter start")
+	libc.getchar()
+
+
+	fmt.println("Engine started")
 	if err := ma.engine_start(&engine); err != nil {
 		fmt.println("Failed to start engine:", err)
+		return
 	}
-	fmt.println("Engine started")
+
+
+	fmt.println("Press enter to end")
 	libc.getchar()
 
 }
